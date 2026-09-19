@@ -31,7 +31,7 @@ Steam 的「驗證遊戲檔案完整性」會完全通過。
 > 6. **完全免費。** 禁止販售、禁止包裝成付費內容、禁止隨遊戲本體散布。
 > 7. **翻譯內容為非官方。** 用詞與官方中文版無關，可能有誤譯或不一致。
 > 8. **未經完整測試。** 只在作者的 Zorin OS 18.1 + Proton 9.0 環境實測過，
->    Windows 與 macOS 從未實機驗證。
+>    Windows 從未實機驗證。
 > 9. **權利人若有異議，請開 issue 或直接聯絡，本專案會立即下架。**
 >
 > 繼續安裝，即表示你已閱讀並接受以上條款。
@@ -53,11 +53,10 @@ Steam 的「驗證遊戲檔案完整性」會完全通過。
 > | Linux / Proton（上述這套）| ✅ 已驗證 |
 > | 其他 Linux 發行版或 Proton 版本 | ⚠ **未測試** |
 > | Windows（原生）| ⚠ **完全未測試** |
-> | macOS（CrossOver、Whisky）| ⚠ **完全未測試** |
 >
-> 技術上三個平台使用同一份 DLL，Windows 理論上更單純（不需要額外設定），
-> 但**作者手上沒有 Windows 或 macOS 環境，一次都沒有實機跑過**。
-> 這兩個平台的安裝說明是依照 Windows 的 DLL 載入規則推導出來的，
+> 同一份 DLL 在 Windows 上理論上更單純（不需要額外設定），
+> 但**作者手上沒有 Windows 環境，一次都沒有實機跑過**。
+> Windows 的安裝說明是依照其 DLL 載入規則推導出來的，
 > 請當作未驗證的測試版看待，遇到問題請附上 log 開 issue（見下方「遇到問題時」）。
 >
 > 上述 Linux 環境已逐項驗證：DLL 代理轉發、檔案導向確實觸發、字型自動挑選、
@@ -83,9 +82,9 @@ Steam 的「驗證遊戲檔案完整性」會完全通過。
 - **A列車で行こう9 Version5.0**（Steam appid 3106160）。
   V4 或更早的版本、以及 Switch／PS4 等主機版都不適用。
 - 64 位元的 `ATrain9v5.exe`。
-- 系統要有一套繁體中文字型。三個平台通常都內建，程式會自動挑，
-  依序尋找第一個裝得到的：
-  Noto Sans CJK TC → Noto Sans TC → 思源黑體 TC → 微軟正黑體 → 蘋方-繁。
+- 系統要有一套繁體中文字型。Windows 與主流 Linux 發行版通常都內建，
+  程式會自動挑，依序尋找第一個裝得到的：
+  Noto Sans CJK TC → Noto Sans TC → 思源黑體 TC → 微軟正黑體。
 
 ---
 
@@ -99,7 +98,6 @@ Steam 的「驗證遊戲檔案完整性」會完全通過。
 |---|---|
 | Windows | `%USERPROFILE%\Documents\My Games\A-Train9\save` |
 | Linux（Proton）| `<Steam 資料庫>/steamapps/compatdata/3106160/pfx/drive_c/users/steamuser/Documents/My Games/A-Train9/save` |
-| macOS（CrossOver）| `~/Library/Application Support/CrossOver/Bottles/<瓶子名>/drive_c/users/crossover/Documents/My Games/A-Train9/save` |
 
 本程式不會寫入存檔，但外部程式介入遊戲時備份是基本動作。
 
@@ -161,16 +159,6 @@ WINEDLLOVERRIDES="dinput8=n,b" %command%
 __NV_PRIME_RENDER_OFFLOAD=1 WINEDLLOVERRIDES="dinput8=n,b" %command%
 ```
 
-### macOS（CrossOver / Whisky）
-
-同樣需要設定 DLL 覆寫，兩種做法擇一：
-
-- **CrossOver**：瓶子設定 → Wine 設定 → 程式庫 → 新增 `dinput8`，
-  排序設為「原生（native）優先」
-- **Whisky / 指令**：在瓶子內執行 `winecfg`，到「程式庫」分頁做同樣設定
-
-或者在啟動指令前加上環境變數 `WINEDLLOVERRIDES="dinput8=n,b"`。
-
 ## 步驟 5：確認有生效
 
 開遊戲，等約 20 秒（可用 `#delay=` 調整），介面文字應該變成中文。
@@ -182,7 +170,7 @@ __NV_PRIME_RENDER_OFFLOAD=1 WINEDLLOVERRIDES="dinput8=n,b" %command%
 ## 移除
 
 1. 刪掉遊戲資料夾裡的 `dinput8.dll` 和 `a9tc.txt`
-2. Linux／macOS 把啟動選項或 DLL 覆寫設定清掉
+2. Linux 把啟動選項清掉
 3. 完成
 
 遊戲資料夾沒有任何東西被改過，**不需要驗證檔案完整性，也不需要重裝**。
@@ -220,7 +208,7 @@ __NV_PRIME_RENDER_OFFLOAD=1 WINEDLLOVERRIDES="dinput8=n,b" %command%
 ## 遇到問題時
 
 執行紀錄在 `%TEMP%\a9tc\a9tc.log`。這個路徑可以直接貼到檔案總管的網址列，
-Linux／macOS 則在遊戲 prefix 的
+Linux 則在遊戲 prefix 的
 `drive_c/users/steamuser/AppData/Local/Temp/a9tc/` 底下。
 
 **回報問題請附上這個檔的前 20 行**，裡面依序記錄了每個可能出錯的環節：
@@ -240,7 +228,7 @@ Linux／macOS 則在遊戲 prefix 的
 
 | log 症狀 | 原因 |
 |---|---|
-| 完全沒有 log 檔 | DLL 沒被載入。Linux／macOS 請確認啟動選項那行有填 |
+| 完全沒有 log 檔 | DLL 沒被載入。Linux 請確認啟動選項那行有填 |
 | `載入 0 條對照` | `a9tc.txt` 沒放進遊戲資料夾，或放錯層 |
 | 沒有 `[bmf] 導向` 這種行 | 檔案導向沒觸發，中文可能顯示為方框 |
 | `[font] 候選字型都找不到` | 系統沒有繁中字型，請自行安裝後用 `#font=` 指定 |
