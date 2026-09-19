@@ -98,7 +98,19 @@ static void lg(const char *fmt, ...)
 /* ---------------- 對照表 ---------------- */
 #define MAX_ENTRIES 16384   /* 對照表條數上限。超過會被無聲丟棄——
                               曾因 4096 上限把最短的一批譯文全砍掉。 */
-static struct { WCHAR *src, *dst; int len; } g_tbl[MAX_ENTRIES];
+/* 對照表只存「日文原文的雜湊」與譯文，不存原文本身。
+   這樣散布出去的檔案裡不含任何遊戲原文，比對速度也不受影響——
+   本來就要掃到字串才比對，改成算雜湊再查表甚至更快。 */
+typedef unsigned long long u64;
+static struct { u64 h; WCHAR *dst; } g_tbl[MAX_ENTRIES];
+
+/* FNV-1a 64 位元，以長度起始，長度不同必然得到不同雜湊 */
+static u64 hash_str(const WCHAR *s, int n)
+{
+    u64 h = 1469598103934665603ULL ^ (u64)(unsigned)n;
+    for (int i = 0; i < n; i++) { h ^= (u64)(unsigned)s[i]; h *= 1099511628211ULL; }
+    return h;
+}
 static int g_tbl_n = 0;
 static int g_dropped = 0;   /* 超過上限被丟掉的條數，一定要報出來 */
 /* 對照表字串的專屬區塊。一定要跟遊戲的記憶體分開、而且掃描時跳過——
@@ -166,16 +178,15 @@ static void load_table(void)
                 *tab = 0;
                 const char *a = p, *b = tab + 1;
                 if (*a && *b) {
-                    int na = MultiByteToWideChar(CP_UTF8,0,a,-1,NULL,0);
+                    char *end = NULL;
+                    u64 h = strtoull(a, &end, 16);
                     int nb = MultiByteToWideChar(CP_UTF8,0,b,-1,NULL,0);
-                    WCHAR *wa = ap, *wb = ap + na;
-                    if (ap + na + nb <= aend) {
-                        ap += na + nb;
-                        MultiByteToWideChar(CP_UTF8,0,a,-1,wa,na);
+                    WCHAR *wb = ap;
+                    if (end && end != a && ap + nb <= aend) {
+                        ap += nb;
                         MultiByteToWideChar(CP_UTF8,0,b,-1,wb,nb);
-                        g_tbl[g_tbl_n].src = wa;
+                        g_tbl[g_tbl_n].h   = h;
                         g_tbl[g_tbl_n].dst = wb;
-                        g_tbl[g_tbl_n].len = na - 1;
                         g_tbl_n++;
                     }
                 }
@@ -341,14 +352,14 @@ static void pick_font(void)
 static int g_idx_head[IDX_SIZE];
 static int g_idx_next[MAX_ENTRIES];
 
-static unsigned idx_hash(int len, WCHAR first)
-{ return ((unsigned)len * 131u + (unsigned)first) & (IDX_SIZE - 1); }
+static unsigned idx_hash(u64 h)
+{ return (unsigned)(h & (IDX_SIZE - 1)); }
 
 static void build_index(void)
 {
     for (int i = 0; i < IDX_SIZE; i++) g_idx_head[i] = -1;
     for (int i = 0; i < g_tbl_n; i++) {
-        unsigned h = idx_hash(g_tbl[i].len, g_tbl[i].src[0]);
+        unsigned h = idx_hash(g_tbl[i].h);
         g_idx_next[i] = g_idx_head[h];
         g_idx_head[h] = i;
     }
@@ -484,11 +495,9 @@ static int patch_once(int full)
                         int    hit = -1;
                         WCHAR *ms  = st;      /* 實際比對／改寫的起點 */
                         int    ml  = len;
-                        for (int i = g_idx_head[idx_hash(ml, ms[0])]; i >= 0; i = g_idx_next[i]) {
-                            if (g_tbl[i].len != ml) continue;
-                            if (wcsncmp(g_tbl[i].src, ms, (size_t)ml)) continue;
-                            hit = i; break;
-                        }
+                        u64 hh = hash_str(ms, ml);
+                        for (int i = g_idx_head[idx_hash(hh)]; i >= 0; i = g_idx_next[i])
+                            if (g_tbl[i].h == hh) { hit = i; break; }
                         /* 完整比對失敗，且開頭那個字的低位元組是 0x75 ——
                            記憶體裡字串前面常黏著這個雜訊字（聵 U+8075 佔 1573 次、
                            u U+0075 佔 99 次，合計 99.8%），跳過它再試一次。
@@ -497,11 +506,9 @@ static int patch_once(int full)
                            那 14 組危險配對的首字低位元組都不是 0x75。 */
                         if (hit < 0 && len >= 3 && (st[0] & 0xFF) == 0x75) {
                             ms = st + 1; ml = len - 1;
-                            for (int i = g_idx_head[idx_hash(ml, ms[0])]; i >= 0; i = g_idx_next[i]) {
-                                if (g_tbl[i].len != ml) continue;
-                                if (wcsncmp(g_tbl[i].src, ms, (size_t)ml)) continue;
-                                hit = i; break;
-                            }
+                            hh = hash_str(ms, ml);
+                            for (int i = g_idx_head[idx_hash(hh)]; i >= 0; i = g_idx_next[i])
+                                if (g_tbl[i].h == hh) { hit = i; break; }
                         }
                         if (hit >= 0) {
                             int pad = 0;
@@ -720,8 +727,9 @@ static DWORD WINAPI dumpja_thread(LPVOID u)
                         int len = (int)(w - st);
                         if (len >= 2 && len <= 127 && has_cjk(st, len) && ja_ok(st, len)) {
                             int known = 0;
-                            for (int i = 0; i < g_tbl_n; i++)
-                                if (g_tbl[i].len == len && !wcsncmp(g_tbl[i].src, st, (size_t)len)) { known = 1; break; }
+                            u64 kh = hash_str(st, len);
+                            for (int i = g_idx_head[idx_hash(kh)]; i >= 0; i = g_idx_next[i])
+                                if (g_tbl[i].h == kh) { known = 1; break; }
                             if (!known && !miss_seen(st, len) && g_missf) {
                                 char buf[512];
                                 int nb = WideCharToMultiByte(CP_UTF8,0,st,len,buf,sizeof(buf)-1,NULL,NULL);
